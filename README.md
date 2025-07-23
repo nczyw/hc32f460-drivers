@@ -45,7 +45,7 @@ endif()
 set(CMAKE_PROJECT_NAME myproject)
 
 # Driver function selection
-set(MCU_TYPE "HC32F4A0xI" CACHE STRING "Set MCU Type")
+set(MCU_TYPE "HC32F460xC" CACHE STRING "Set MCU Type")
 set(BOOTLOADER OFF CACHE BOOL "Set to ON if bootloader is enabled")
 set(APP OFF CACHE BOOL "Set to ON if app is enabled")
 set(RT-THREAD OFF CACHE BOOL "Set to ON if RT-Thread is enabled")
