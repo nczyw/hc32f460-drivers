@@ -181,7 +181,7 @@
  * @defgroup CAN_Local_Variables CAN Local Variables
  * @{
  */
-const static uint8_t m_au8DLC2WordSize[9U] = {
+static const uint8_t m_au8DLC2WordSize[9U] = {
     0U, 1U, 1U, 1U, 1U, 2U, 2U, 2U, 2U
 };
 
