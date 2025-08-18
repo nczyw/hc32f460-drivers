@@ -1,4 +1,4 @@
-# 小华单片机hc32f4a0系列cmake驱动
+# 小华单片机hc32f460系列cmake驱动
 ## 介绍
  - 驱动来自小华的3.3.0版本,修改了部分代码,添加了部分功能.
  - 支持配置为`bootloader,app,normal`三种模式.
@@ -11,7 +11,7 @@
  - `hc32_ll_can.c`中`const static uint8_t m_au8DLC2WordSize[16U]`修改为`static const uint8_t m_au8DLC2WordSize[16U] `将`static`放在最前面,以规范代码,去除警告.
  - 当有`rt-thread`
    - 修改了`startup_hc32f460.S`中`bl main`修改为`bl entry`来支持`rt-thread`系统.
-   - 修改了`HC32F4A0xI.ld`和`HC32F4A0xG.ld`链接脚本,来支持`rt-thread`系统相关自动初始化函数,来保证不被编译器优化.
+   - 修改了`hc32f460xI.ld`和`hc32f460xG.ld`链接脚本,来支持`rt-thread`系统相关自动初始化函数,来保证不被编译器优化.
    - 去除了usb驱动,需要其它文件,还没研究.
 ## 使用前准备
 - [Cmake下载](https://cmake.org/download/)

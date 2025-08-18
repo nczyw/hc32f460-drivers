@@ -9,7 +9,7 @@ set(Drivers_Defines
 )
 
 # Drivers Hearders
-set(Drivers_Hearers
+set(Drivers_Headers
     "${CMAKE_CURRENT_LIST_DIR}/mcu/inc"
     "${CMAKE_CURRENT_LIST_DIR}/hc32_ll_driver/inc"
     "${CMAKE_CURRENT_LIST_DIR}/cmsis/Include"
@@ -54,7 +54,7 @@ endif()
 
 
 add_library(hc32f460 INTERFACE)
-target_include_directories(hc32f460 INTERFACE ${Drivers_Hearers})
+target_include_directories(hc32f460 INTERFACE ${Drivers_Headers})
 target_compile_definitions(hc32f460 INTERFACE ${Drivers_Defines})
 
 # create drivers object library
