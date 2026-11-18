@@ -61,7 +61,7 @@
  {
     "configurations": [
         {
-            "name": "HC32F4A0",
+            "name": "HC32F460",
             "compilerPath": "arm-none-eabi-gcc",
             "intelliSenseMode": "windows-gcc-arm",
             "cStandard": "gnu17",
@@ -90,7 +90,7 @@
             "type": "cortex-debug",
             "runToEntryPoint": "main",
             "servertype": "pyocd",
-            "targetId": "hc32f4a0xi",
+            "targetId": "hc32f460xe",
             "gdbPath": "arm-none-eabi-gdb",
             //"overrideGDBServerStartedRegex": "GDB server listening on port"
         }
