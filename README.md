@@ -13,23 +13,95 @@
    - 修改了`startup_hc32f460.S`中`bl main`修改为`bl entry`来支持`rt-thread`系统.
    - 修改了`hc32f460xI.ld`和`hc32f460xG.ld`链接脚本,来支持`rt-thread`系统相关自动初始化函数,来保证不被编译器优化.
    - 去除了usb驱动,需要其它文件,还没研究.
+ - 添加`hc32_ll_hash_ex`驱动文件,实现了`sha256`和 `hmac` 分段添加并运算功能.
+ - 链接脚本中添加了`__app_start`,`__app_end`,`__app_size`,用来指示当前固件在flash中开始地址,结束地址,大小,方便用来校验固件,使用方法:`extern char __app_size;`,`static uint32_t firmware_size  = (uint32_t)&__app_size;`
+ - 添加了`set(CMAKE_EXPORT_COMPILE_COMMANDS ON)`生成`compile_commands.json`文件,用于代码补全.
+ - toolchain中添加了对版本号和git的支持, 编译的文件名自动会包含版本号`FIRMWARE_NAME` 不定义时,默认使用`CMAKE_PROJECT_NAME`
 ## 使用前准备
 - [Cmake下载](https://cmake.org/download/)
   - 安装Cmake,会自动将cmake安装到环境变量中,如果`cmake`提示未找到要手动将cmake的bin目录加入到环境变量中.
-- [MinGW下载](https://github.com/niXman/mingw-builds-binaries/releases)
-  - 安装MinGW编译器,如果是是解压类型,解压后把bin目录加入到环境变量中.
+- [Ninja下载](https://github.com/ninja-build/ninja/releases/)
+  - 安装Ninja,如果是是解压类型,解压后把目录加入到环境变量中.
 - [gcc-arm-none-eabi下载](https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads)
   - 安装gcc-arm-none-eabi,如果是解压型的,解压后把bin目录加入到环境变量中.
 - [pyOCD安装方法](https://github.com/pyocd/pyOCD),这是下载和调试mcu的工具,只编译的话,不需要.
   - 还可以安装libusb,来显示更多调试信息,比如断言.
 ## Cmake 配置例子
- - 在自己的项目中添加本驱动
+ - cmake例子中, 添加了`FIRMWARE_VERSION_STR`和`FIRMWARE_VERSION` , 用来演示设置版本号例子, 添加了执行`clean`时也自动删除带版本号的map文件,但是elf文件不带任何后缀,如果elf文件我名字一直变,对调试器非常不友好
+ - 添加了`PROJECT_VERSION_MAJOR`,`PROJECT_VERSION_MINOR`,`PROJECT_VERSION_PATCH` 宏定义, 下面是使用一个`uint32_t`来表示版本的示例
+ ```c
+ uint32_t version_get(void){
+    return ((uint32_t)(PROJECT_VERSION_MAJOR & 0x3FFU) << 22U) |
+           ((uint32_t)(PROJECT_VERSION_MINOR & 0x7FFU) << 11U) |
+           ((uint32_t)(PROJECT_VERSION_PATCH & 0x7FFU));
+ }
+ ```
+ - 在自己的项目中添加并使用本驱动
  ```bash
+ # 添加驱动为子模块
  git submodule add https://github.com/nczyw/hc32f460-drivers.git drivers
+ # 初始化子模块
+ git submodule init
+ # 更新子模块
+ git submodule update --init --recursive
+ # 创建编译文件夹
+ mkdir build
+ cd build
+ # 编译(linux)
+ cmake -DCMAKE_BUILD_TYPE=Release .. -G Ninja
+ cmake --build .
+ # 编译(windows)
+ cmake -DCMAKE_BUILD_TYPE=Release .. -G Ninja 
+ cmake --build .
+ # 烧写
+ pyocd flash -t hc32f4a0xi myproject.elf
+ ```
+ - vsocde打开项目时显示全红,但是可以编译的解决方法,因cmake中添加了`set(CMAKE_EXPORT_COMPILE_COMMANDS ON)`,会自动在编译目录下生成`compile_commands.json`文件,在项目下的`.vscode`目录下创建一个`c_cpp_properties.json`文件,并添加以下内容,保存后,会自动在结尾添加`version: 4`,版本字样,可能不是4,`name`可以自己设置,`compile_commands.json`的生成目录也可以自己设置和cmake的生成目录一致.
+ ```json
+ {
+    "configurations": [
+        {
+            "name": "HC32F4A0",
+            "compilerPath": "arm-none-eabi-gcc",
+            "intelliSenseMode": "windows-gcc-arm",
+            "cStandard": "gnu17",
+            "cppStandard": "gnu++17",
+            "compileCommands": [
+                "build/compile_commands.json"
+            ]
+        }
+    ]
+ }
+ ``` 
+ - VsCode中调试工具:`Cortex-Debug`, 配置如下,`overrideGDBServerStartedRegex`这个是启动成功提示,如果有问题再加上
+ ```json
+  {
+    // 使用 IntelliSense 了解相关属性。 
+    // 悬停以查看现有属性的描述。
+    // 欲了解更多信息，请访问: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+
+        {
+            "name": "Cortex Debug",
+            "cwd": "${workspaceFolder}",
+            "executable": "./build/hc32f4a0-bootloader.elf",
+            "request": "launch",
+            "type": "cortex-debug",
+            "runToEntryPoint": "main",
+            "servertype": "pyocd",
+            "targetId": "hc32f4a0xi",
+            "gdbPath": "arm-none-eabi-gdb",
+            //"overrideGDBServerStartedRegex": "GDB server listening on port"
+        }
+    ]
+ }
  ```
  - 项目CMake例子
-```cmake
+ ```cmake
 cmake_minimum_required(VERSION 3.27)
+
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Setup compiler settings
 set(CMAKE_C_STANDARD 17)
@@ -44,8 +116,40 @@ endif()
 # Set the project name
 set(CMAKE_PROJECT_NAME myproject)
 
+set(FIRMWARE_VERSION_STR "1.0.0")
+set(FIRMWARE_VERSION "")
+find_program(GIT_EXECUTABLE git)
+if(GIT_EXECUTABLE)
+    # only hash
+    execute_process(
+        COMMAND ${GIT_EXECUTABLE} rev-parse --short HEAD
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        OUTPUT_VARIABLE GIT_HASH
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        RESULT_VARIABLE HASH_RESULT
+        ERROR_QUIET
+    )
+    
+    # check dirty
+    execute_process(
+        COMMAND ${GIT_EXECUTABLE} status --porcelain
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        OUTPUT_VARIABLE GIT_STATUS
+        ERROR_QUIET
+    )
+    
+    if(HASH_RESULT EQUAL 0 AND GIT_HASH)
+        set(FIRMWARE_VERSION "-${GIT_HASH}")
+        if(GIT_STATUS)
+            set(FIRMWARE_VERSION "-${FIRMWARE_VERSION}-dirty")
+        endif()
+    endif()
+endif()
+set(FIRMWARE_NAME "${CMAKE_PROJECT_NAME}-v${FIRMWARE_VERSION_STR}${FIRMWARE_VERSION}")
+message(STATUS "Firmware name: ${FIRMWARE_NAME}")
+
 # Driver function selection
-set(MCU_TYPE "HC32F460xC" CACHE STRING "Set MCU Type")
+set(MCU_TYPE "HC32F460xE" CACHE STRING "Set MCU Type")
 set(BOOTLOADER OFF CACHE BOOL "Set to ON if bootloader is enabled")
 set(APP OFF CACHE BOOL "Set to ON if app is enabled")
 set(RT-THREAD OFF CACHE BOOL "Set to ON if RT-Thread is enabled")
@@ -57,7 +161,7 @@ include("drivers/toolchain/gcc-arm-none-eabi.cmake")
 set(CMAKE_EXPORT_COMPILE_COMMANDS TRUE)
 
 # Core project settings
-project(${CMAKE_PROJECT_NAME} VERSION 1.0.0)
+project(${CMAKE_PROJECT_NAME} VERSION ${FIRMWARE_VERSION_STR})
 message("Build type: " ${CMAKE_BUILD_TYPE})
 
 # Enable CMake support for ASM and C languages
@@ -65,16 +169,26 @@ enable_language(C ASM)
 
 # Create an executable object type
 add_executable(${CMAKE_PROJECT_NAME})
+
+set_target_properties(${CMAKE_PROJECT_NAME} PROPERTIES
+    OUTPUT_NAME ${CMAKE_PROJECT_NAME}
+    ADDITIONAL_CLEAN_FILES "${CMAKE_CURRENT_BINARY_DIR}/${FIRMWARE_NAME}.map"
+)
+
+set_property(DIRECTORY APPEND PROPERTY ADDITIONAL_CLEAN_FILES
+    "${CMAKE_CURRENT_BINARY_DIR}/${FIRMWARE_NAME}.map"
+)
 # "Generate hex and bin files and associate them with the clean target."
 add_custom_command(
     TARGET ${CMAKE_PROJECT_NAME}
     POST_BUILD
-        COMMAND ${CMAKE_OBJCOPY} -O ihex $<TARGET_FILE:${CMAKE_PROJECT_NAME}> ${CMAKE_PROJECT_NAME}.hex
-        COMMAND ${CMAKE_OBJCOPY} -O binary $<TARGET_FILE:${CMAKE_PROJECT_NAME}> ${CMAKE_PROJECT_NAME}.bin
+        COMMAND ${CMAKE_OBJCOPY} -O ihex $<TARGET_FILE:${CMAKE_PROJECT_NAME}> ${FIRMWARE_NAME}.hex
+        COMMAND ${CMAKE_OBJCOPY} -O binary $<TARGET_FILE:${CMAKE_PROJECT_NAME}> ${FIRMWARE_NAME}.bin
     BYPRODUCTS 
-        ${CMAKE_PROJECT_NAME}.hex
-        ${CMAKE_PROJECT_NAME}.bin
+        ${FIRMWARE_NAME}.hex
+        ${FIRMWARE_NAME}.bin
 )
+
 # Include the drivers,Drivers can be loaded using the submodule management method, which is recommended.
 add_subdirectory("drivers")
 
@@ -100,5 +214,10 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
 )
 target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined libraries
+)
+target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
+    PROJECT_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}
+    PROJECT_VERSION_MINOR=${PROJECT_VERSION_MINOR}
+    PROJECT_VERSION_PATCH=${PROJECT_VERSION_PATCH}
 )
 ```
