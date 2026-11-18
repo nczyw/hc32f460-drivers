@@ -187,7 +187,7 @@ SECTIONS
     } >RET_RAM
 
     __app_start = ORIGIN(FLASH);
-    __app_end   = LOADADDR(.ramb_data) + SIZEOF(.ramb_data);
+    __app_end   = LOADADDR(.ret_ram_data) + SIZEOF(.ret_ram_data);
     __app_size  = __app_end - __app_start;
 
     .bss (NOLOAD):
