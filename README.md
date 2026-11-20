@@ -6,7 +6,7 @@
 - 支持配置为`bootloader,app,normal`三种模式.
 - 还支持是否有`rt-thread`系统.
 - bootloader模式下,flash前128KB为bootloader,其余为app.
-- 添加了`printf`支持浮点打印.
+- `printf`和`scanf` 默认关闭, 来减少固件大小, 如有需要,可以在`CMakeLists.txt`中开启, 把`ENABLE_PRINTF_FLOAT`和`ENABLE_SCANF_FLOAT`设置为`ON`.
 - 当使用gcc-arm-none-eabi,11及以上版本的编译器时，编译时会出现`LOAD segment with RWX permissions 警告`,`toolchain`中可以忽略这个警告，但是忽略参数11版本以下的又不支持,所以保留了这个警告,修改链接脚本也可以消除此警告,但是同样不支持11版本以下的编译器,固没做修改.
 - 使用严格的编程模式,任何警告都视为错误,停止编译,可以养成好编程习惯.
 
@@ -16,7 +16,7 @@
 - 当有`rt-thread`
   - 修改了`startup_hc32f460.S`中`bl main`修改为`bl entry`来支持`rt-thread`系统.
   - 修改了`hc32f460xI.ld`和`hc32f460xG.ld`链接脚本,来支持`rt-thread`系统相关自动初始化函数,来保证不被编译器优化.
-  - 去除了usb驱动,需要其它文件,还没研究.
+- 恢复了 USB驱动支持, 修改了USB文件延时依赖; 使用USB时,必须要在顶层cmake中修改option(USE_USB ON), 然后定义头文件, `usb_app_conf.h`.
 - 添加`hc32_ll_hash_ex`驱动文件,实现了`sha256`和 `hmac` 分段添加并运算功能.
 - 链接脚本中添加了`__app_start`,`__app_end`,`__app_size`,用来指示当前固件在flash中开始地址,结束地址,大小,方便用来校验固件,使用方法:`externchar __app_size;`,`static uint32_t firmware_size  = (uint32_t)&__app_size;`
 - 添加了`set(CMAKE_EXPORT_COMPILE_COMMANDS ON)`生成`compile_commands.json`文件,用于代码补全.
@@ -37,6 +37,7 @@
 
 - cmake例子中, 添加了`FIRMWARE_VERSION_STR`和`FIRMWARE_VERSION` , 用来演示设置版本号例子, 添加了执行`clean`时也自动删除带版本号的map文件,但是elf文件不带任何后缀,如果elf文件我名字一直变,对调试器非常不友好
 - 添加了`PROJECT_VERSION_MAJOR`,`PROJECT_VERSION_MINOR`,`PROJECT_VERSION_PATCH` 宏定义, 下面是使用一个`uint32_t`来表示版本的示例
+- cmake例子中, 添加了option(USE_USB ON), 来默认开启USB支持, 打开和不打开USB支持, 对固件大小没有影响, 代码中真正使用了USB, 一定要打开支持, 并定义usb_app_conf.h, 没有这个头文件不会报错, 但是USB会无法使用, 因为缺少很多宏定义开关
 
  ```c
  uint32_t version_get(void){
@@ -171,6 +172,9 @@ set(BOOTLOADER OFF CACHE BOOL "Set to ON if bootloader is enabled")
 set(APP OFF CACHE BOOL "Set to ON if app is enabled")
 set(RT-THREAD OFF CACHE BOOL "Set to ON if RT-Thread is enabled")
 
+# Enable printf and scanf float
+option(ENABLE_PRINTF_FLOAT "printf report %f" OFF)
+option(ENABLE_SCANF_FLOAT  "scanf report %f"  OFF)
 # Include toolchain file
 include("drivers/toolchain/gcc-arm-none-eabi.cmake")
 

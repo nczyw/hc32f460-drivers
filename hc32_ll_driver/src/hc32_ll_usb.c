@@ -27,7 +27,7 @@
  * Include files
  ******************************************************************************/
 #include "hc32_ll_usb.h"
-#include "usb_bsp.h"
+#include "hc32_ll_utility.h"
 
 /**
  * @addtogroup LL_Driver
@@ -97,7 +97,7 @@ void usb_coresoftrst(LL_USB_TypeDef *USBx)
 
     /* Wait for AHB master to be idle. */
     do {
-        usb_udelay(1UL);
+        DDL_DelayUS(1UL);
         u32grstctl = READ_REG32(USBx->GREGS->GRSTCTL);
         if (++u32Count > 100000UL) {
             u8Status = USB_ERROR;
@@ -117,10 +117,10 @@ void usb_coresoftrst(LL_USB_TypeDef *USBx)
                 break;
             }
             u32Count++;
-            usb_udelay(1UL);
+            DDL_DelayUS(1UL);
         } while (0UL != (u32grstctl & USBFS_GRSTCTL_CSRST));
         /* Wait for at least 3 PHY clocks after the core resets */
-        usb_udelay(3UL);
+        DDL_DelayUS(3UL);
     }
 }
 
@@ -248,7 +248,7 @@ void usb_initusbcore(LL_USB_TypeDef *USBx, USB_CORE_BASIC_CFGS *basic_cfgs)
     usb_PhySelect(USBx, basic_cfgs->phy_type);
     /* reset the core through core soft reset */
     usb_coresoftrst(USBx);
-    usb_mdelay(20UL);
+    DDL_DelayMS(20UL);
     if (basic_cfgs->dmaen == 1U) {
         /* burst length/type(HBstLen) 64-words x32-bit,  core operates in a DMA mode*/
         usb_BurstLenConfig(USBx, 5U);
@@ -279,10 +279,10 @@ void usb_txfifoflush(LL_USB_TypeDef *USBx, uint32_t num)
         } else {
             break;
         }
-        usb_udelay(1UL);
+        DDL_DelayUS(1UL);
     } while (0UL != (u32grstctl & USBFS_GRSTCTL_TXFFLSH));
     /* Wait for at least 3 PHY clocks after the txfifo has been flushed */
-    usb_udelay(3UL);
+    DDL_DelayUS(3UL);
 }
 
 /**
@@ -305,10 +305,10 @@ void usb_rxfifoflush(LL_USB_TypeDef *USBx)
         } else {
             break;
         }
-        usb_udelay(1UL);
+        DDL_DelayUS(1UL);
     } while (0UL != (u32grstctl & USBFS_GRSTCTL_RXFFLSH));
     /* Wait for at least 3 PHY clocks after the rxfifo has been flushed */
-    usb_udelay(3UL);
+    DDL_DelayUS(3UL);
 }
 
 /**
@@ -326,7 +326,7 @@ void usb_modeset(LL_USB_TypeDef *USBx, uint8_t mode)
         MODIFY_REG32(USBx->GREGS->GUSBCFG, USBFS_GUSBCFG_FHMOD | USBFS_GUSBCFG_FDMOD, USBFS_GUSBCFG_FDMOD);
     }
     /* Waite for the change to take effect */
-    usb_mdelay(50UL);
+    DDL_DelayMS(50UL);
 }
 
 #ifdef USE_DEVICE_MODE
@@ -966,7 +966,7 @@ void usb_remotewakeupen(LL_USB_TypeDef *USBx)
     }
 
     SET_REG32_BIT(USBx->DREGS->DCTL, USBFS_DCTL_RWUSIG);
-    usb_mdelay(5UL);
+    DDL_DelayMS(5UL);
     CLR_REG32_BIT(USBx->DREGS->DCTL, USBFS_DCTL_RWUSIG);
 }
 
@@ -983,7 +983,7 @@ void usb_ctrldevconnect(LL_USB_TypeDef *USBx, uint8_t link)
     } else {
         SET_REG32_BIT(USBx->DREGS->DCTL, USBFS_DCTL_SDIS);
     }
-    usb_mdelay(3UL);
+    DDL_DelayMS(3UL);
 }
 #endif
 
@@ -1077,10 +1077,10 @@ void usb_hprtrst(LL_USB_TypeDef *USBx)
     u32hprt = usb_rdhprt(USBx);
     u32hprt |= USBFS_HPRT_PRST;
     WRITE_REG32(*USBx->HPRT, u32hprt);
-    usb_mdelay(10UL);
+    DDL_DelayMS(10UL);
     u32hprt &= ~USBFS_HPRT_PRST;
     WRITE_REG32(*USBx->HPRT, u32hprt);
-    usb_mdelay(20UL);
+    DDL_DelayMS(20UL);
 }
 
 /**
