@@ -13,7 +13,7 @@
 
 ## 修改内容
 
-- `hc32_ll_can.c`中`const static uint8_t m_au8DLC2WordSize[16U]`修改为`static const uint8_t m_au8DLC2WordSize[16U] `将`static`放在前面,以规范代码,去除警告.
+- `hc32_ll_can.c`中`const static uint8_t m_au8DLC2WordSize[16U]`修改为`static const uint8_t m_au8DLC2WordSize[16U]`将`static`放在前面,以规范代码,去除警告.
 - 当有`rt-thread`
   - 修改了`startup_hc32f460.S`中`bl main`修改为`bl entry`来支持`rt-thread`系统.
   - 修改了`hc32f460xI.ld`和`hc32f460xG.ld`链接脚本,来支持`rt-thread`系统相关自动初始化函数,来保证不被编译器优化.
@@ -148,6 +148,7 @@ AES_Final_Ex(&ctx, cipher + out, &out); /* CTR Final out=0,空操作 */
 ```
 
 > **安全须知**:
+>
 > - CBC 解密时密文必须是 16B 整倍数,否则 `AES_Final_Ex` 返回 `LL_ERR_INVD_PARAM`.
 > - PKCS#7 在解密 Final 中做严格校验,padding 字节必须等于其值,校验失败返回 `LL_ERR_INVD_PARAM`.
 > - CTR 模式下同一 `(key, nonce)` 绝不能重复使用同一 counter 值,否则 keystream 会重复导致明文泄露.
@@ -158,10 +159,10 @@ AES_Final_Ex(&ctx, cipher + out, &out); /* CTR Final out=0,空操作 */
 所有扩展 API 统一使用 `hc32_ll_def.h` 中的返回码:
 
 | 返回值 | 含义 |
-|---|---|
+| --- | --- |
 | `LL_OK`           (0) | 成功 |
-| `LL_ERR_INVD_PARAM`    | 指针 NULL、参数越界、状态机非法、padding 校验失败 |
-| `LL_ERR_TIMEOUT`       | 硬件 START 在超时窗口内未清零 |
+| `LL_ERR_INVD_PARAM` | 指针 NULL、参数越界、状态机非法、padding 校验失败 |
+| `LL_ERR_TIMEOUT` | 硬件 START 在超时窗口内未清零 |
 
 ### 多任务安全示例
 

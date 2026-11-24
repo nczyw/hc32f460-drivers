@@ -1,22 +1,3 @@
-/**
- *******************************************************************************
- * @file  adc/adc_awd/source/hc32f4xx_conf.h
- * @brief This file contains HC32 Series Device Driver Library usage management.
- @verbatim
-   Change Logs:
-   Date             Author          Notes
-   2022-03-31       CDT             First version
- @endverbatim
- *******************************************************************************
- * Copyright (C) 2022-2025, Xiaohua Semiconductor Co., Ltd. All rights reserved.
- *
- * This software component is licensed by XHSC under BSD 3-Clause license
- * (the "License"); You may not use this file except in compliance with the
- * License. You may obtain a copy of the License at:
- *                    opensource.org/licenses/BSD-3-Clause
- *
- *******************************************************************************
- */
 #ifndef __HC32F4XX_CONF_H__
 #define __HC32F4XX_CONF_H__
 
@@ -92,14 +73,6 @@ extern "C"
 #define LL_USB_ENABLE                               (DDL_ON)
 #define LL_WDT_ENABLE                               (DDL_ON)
 
-
-/*******************************************************************************
- * Global variable definitions ('extern')
- ******************************************************************************/
-
-/*******************************************************************************
- * Global function prototypes (definition in C source)
- ******************************************************************************/
 
 #ifdef __cplusplus
 }
