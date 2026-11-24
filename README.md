@@ -9,6 +9,7 @@
 - `printf`和`scanf` 默认关闭, 来减少固件大小, 如有需要,可以在`CMakeLists.txt`中开启, 把`ENABLE_PRINTF_FLOAT`和`ENABLE_SCANF_FLOAT`设置为`ON`.
 - 当使用gcc-arm-none-eabi,11及以上版本的编译器时，编译时会出现`LOAD segment with RWX permissions 警告`,`toolchain`中可以忽略这个警告，但是忽略参数11版本以下的又不支持,所以保留了这个警告,修改链接脚本也可以消除此警告,但是同样不支持11版本以下的编译器,固没做修改.
 - 使用严格的编程模式,任何警告都视为错误,停止编译,可以养成好编程习惯.
+- 将C库修改为`nano.specs`, 以前使用的`nosys.specs`使用C库一些函数后固件会变的非常大.
 
 ## 修改内容
 
@@ -17,10 +18,181 @@
   - 修改了`startup_hc32f460.S`中`bl main`修改为`bl entry`来支持`rt-thread`系统.
   - 修改了`hc32f460xI.ld`和`hc32f460xG.ld`链接脚本,来支持`rt-thread`系统相关自动初始化函数,来保证不被编译器优化.
 - 恢复了 USB驱动支持, 修改了USB文件延时依赖; 使用USB时,必须要在顶层cmake中修改option(USE_USB ON), 然后定义头文件, `usb_app_conf.h`.
-- 添加`hc32_ll_hash_ex`驱动文件,实现了`sha256`和 `hmac` 分段添加并运算功能.
-- 链接脚本中添加了`__app_start`,`__app_end`,`__app_size`,用来指示当前固件在flash中开始地址,结束地址,大小,方便用来校验固件,使用方法:`externchar __app_size;`,`static uint32_t firmware_size  = (uint32_t)&__app_size;`
+- 添加`hc32_ll_hash_ex`驱动文件,实现了`SHA256`和`HMAC-SHA256`分段流式运算功能.
+- 添加`hc32_ll_aes_ex`驱动文件,实现了`ECB`/`CBC`/`CTR`模式下的分段流式AES加解密,自动处理PKCS#7 padding.
+- 链接脚本中添加了`__app_start`,`__app_end`,`__app_size`,用来指示当前固件在flash中开始地址,结束地址,大小,方便用来校验固件,使用方法:`extern char __app_size;`,`static uint32_t firmware_size  = (uint32_t)&__app_size;`
 - 添加了`set(CMAKE_EXPORT_COMPILE_COMMANDS ON)`生成`compile_commands.json`文件,用于代码补全.
 - toolchain中添加了对版本号和git的支持, 编译的文件名自动会包含版本号`FIRMWARE_NAME` 不定义时,默认使用`CMAKE_PROJECT_NAME`
+
+## 扩展驱动使用方法
+
+所有扩展驱动的状态都保存在**调用方自己持有的 ctx 结构体**里(栈上/静态/堆皆可),不使用文件级全局变量,因此多任务并发调用同一个扩展驱动不会互相踩状态.注意: **AES / HASH 硬件是全芯片单实例**,若两个任务同时发起计算,仍需外层互斥锁(OS mutex 或裸机临界区)保护硬件访问.
+
+### 依赖条件
+
+在 MCU 的 `hc32f4xx_conf.h` 中确保开启对应的开关:
+
+```c
+#define LL_HASH_ENABLE      DDL_ON
+#define LL_AES_ENABLE       DDL_ON
+```
+
+驱动已由 `drivers/CMakeLists.txt` 中的 `src/*.c` glob 自动纳入构建,无需额外添加源文件.新增源文件后需要重新执行一次 `cmake` 配置.
+
+### hc32_ll_hash_ex —— 流式 SHA256 / HMAC-SHA256
+
+头文件:`#include "hc32_ll_hash_ex.h"`
+
+**SHA256 流式(数据零散到达/固件大于 RAM 时):**
+
+```c
+#include "hc32_ll_hash_ex.h"
+
+stc_hash_ctx_t ctx;
+uint8_t digest[32];
+
+HASH_Init_Ex(&ctx);                  /* 重置硬件,初始化 ctx */
+
+HASH_Update_Ex(&ctx, chunk1, len1); /* 第1段,比如 Flash 前 1KB */
+HASH_Update_Ex(&ctx, chunk2, len2); /* 第2段 */
+HASH_Update_Ex(&ctx, chunk3, len3); /* ... 每次长度不限 */
+
+HASH_Final_Ex(&ctx, digest);         /* 自动补 0x80+padding+64bit 长度,拿 32B 摘要 */
+```
+
+**HMAC-SHA256 流式:**
+
+```c
+stc_hmac_ctx_t ctx;
+uint8_t key[]  = "my-secret-key";
+uint8_t hmac[32];
+
+HMAC_Init_Ex(&ctx, key, sizeof(key) - 1);   /* key 自动做 RFC 2104 预处理,>64B 时内部先 HASH */
+HMAC_Update_Ex(&ctx, msg1, len1);            /* 流式喂消息 */
+HMAC_Update_Ex(&ctx, msg2, len2);
+HMAC_Final_Ex(&ctx, hmac);                   /* 等硬件 inner→outer 完成,读最终 HMAC */
+```
+
+> **原理**:HC32F460 的 HASH 硬件只暴露 START + FST_GRP 两个 bit,真正的 64 轮 SHA256 压缩函数是硬件做的,软件只负责凑 64B 块和拼 FIPS 180-4 padding. HMAC 因硬件没有对应 mode,采用标准 RFC 2104 两次 SHA256 实现(`H(k0^opad || H(k0^ipad || msg))`).
+
+### hc32_ll_aes_ex —— 流式 AES (ECB / CBC / CTR)
+
+头文件:`#include "hc32_ll_aes_ex.h"`
+
+> **注意**:HC32F460 的 AES 硬件/驱动只支持 **AES-128**,`AES_Init_Ex` 对 16 字节以外的 key 返回 `LL_ERR_INVD_PARAM`.
+
+**ECB 加密(简单块,无 IV,不推荐用于安全场景):**
+
+```c
+#include "hc32_ll_aes_ex.h"
+
+stc_aes_ctx_t ctx;
+uint8_t key[16] = { /* AES-128 key */ };
+uint8_t cipher[256];
+uint32_t out_len;
+
+AES_Init_Ex(&ctx,
+            AES_EX_MODE_ECB,
+            AES_EX_DIR_ENCRYPT,
+            key, AES_KEY_SIZE_16BYTE,
+            NULL);                      /* ECB 不传 IV */
+
+AES_Update_Ex(&ctx, plaintext, len, cipher, &out_len); /* 未满 16B 会暂存 */
+AES_Final_Ex(&ctx, cipher + out_len, &out_len);         /* 自动 PKCS#7 补齐 1 块 */
+```
+
+**CBC 加密(带 IV,安全):**
+
+```c
+stc_aes_ctx_t ctx;
+uint8_t key[16] = { /* ... */ };
+uint8_t iv[16]  = { /* 随机值,加解密必须同一 */ };
+
+AES_Init_Ex(&ctx, AES_EX_MODE_CBC, AES_EX_DIR_ENCRYPT,
+            key, AES_KEY_SIZE_16BYTE, iv);
+
+AES_Update_Ex(&ctx, chunk1, len1, cipher,              &out1);
+AES_Update_Ex(&ctx, chunk2, len2, cipher + out1,       &out2);
+AES_Final_Ex(&ctx,                 cipher + out1 + out2, &out3);
+```
+
+**CBC 解密(`Final` 同样是 3 参数,最后一个密文块由 `Update` 自动扣留):**
+
+```c
+AES_Init_Ex(&ctx, AES_EX_MODE_CBC, AES_EX_DIR_DECRYPT,
+            key, AES_KEY_SIZE_16BYTE, iv);  /* IV 和加密时相同 */
+
+/* 密文可以任意分段喂,不必自己留最后一块,输出会延迟一块 */
+AES_Update_Ex(&ctx, cipher + off, len, plain + out_off, &out);
+/* ...可以继续多次 Update... */
+
+/* Final 内部解密被扣留的最后一块,校验并剥离 PKCS#7 */
+AES_Final_Ex(&ctx, plain + out_off, &out);
+```
+
+> 解密时 `Update` 的输出比输入滞后一个 16B 块(因为最后一块可能是带 padding 的块,只能在 Final 校验),这是流式解密的正常行为.
+
+**CTR(流密码,不需要 padding):**
+
+```c
+stc_aes_ctx_t ctx;
+uint8_t nonce_ctr[16] = { /* 高 8B nonce + 低 8B 初始 counter(大端) */ };
+
+AES_Init_Ex(&ctx, AES_EX_MODE_CTR, AES_EX_DIR_ENCRYPT, /* dir 被忽略 */
+            key, AES_KEY_SIZE_16BYTE, nonce_ctr);
+
+/* CTR 每次 Update 都立刻返回已消耗的输出字节数,不需要 16B 对齐 */
+AES_Update_Ex(&ctx, plaintext, len, cipher, &out);
+
+AES_Final_Ex(&ctx, cipher + out, &out); /* CTR Final out=0,空操作 */
+```
+
+> **安全须知**:
+> - CBC 解密时密文必须是 16B 整倍数,否则 `AES_Final_Ex` 返回 `LL_ERR_INVD_PARAM`.
+> - PKCS#7 在解密 Final 中做严格校验,padding 字节必须等于其值,校验失败返回 `LL_ERR_INVD_PARAM`.
+> - CTR 模式下同一 `(key, nonce)` 绝不能重复使用同一 counter 值,否则 keystream 会重复导致明文泄露.
+> - 成功 Final 后 ctx 中的 key、buffer、ctr 均会自动清零,不会在 RAM 中残留密钥,同时会调用 `AES_DeInit()` 清空硬件密钥寄存器.
+
+### 返回值
+
+所有扩展 API 统一使用 `hc32_ll_def.h` 中的返回码:
+
+| 返回值 | 含义 |
+|---|---|
+| `LL_OK`           (0) | 成功 |
+| `LL_ERR_INVD_PARAM`    | 指针 NULL、参数越界、状态机非法、padding 校验失败 |
+| `LL_ERR_TIMEOUT`       | 硬件 START 在超时窗口内未清零 |
+
+### 多任务安全示例
+
+```c
+/* 任务 A:算固件 SHA256 */
+stc_hash_ctx_t ctx_fw;
+HASH_Init_Ex(&ctx_fw);
+HASH_Update_Ex(&ctx_fw, fw_chunk, fw_len);
+HASH_Final_Ex(&ctx_fw, fw_hash);
+
+/* 任务 B(同时)算通信包 HMAC */
+stc_hmac_ctx_t ctx_comm;
+HMAC_Init_Ex(&ctx_comm, key, key_len);
+HMAC_Update_Ex(&ctx_comm, rx_pkt, rx_len);
+HMAC_Final_Ex(&ctx_comm, mac);
+```
+
+两套 ctx 各自独立,但 **HASH/AES 硬件是共享的**。若两个任务并发调用,需在调用方外层加互斥保护:
+
+```c
+/* 以 RT-Thread 为例 */
+#include <rtthread.h>
+
+/* 初始化阶段 */
+rt_mutex_t crypto_mutex = rt_mutex_create("crypto", RT_IPC_FLAG_PRIO);
+
+/* 加锁使用 */
+rt_mutex_take(crypto_mutex, RT_WAITING_FOREVER);
+HASH_Update_Ex(&ctx, data, len);
+rt_mutex_release(crypto_mutex);
+```
 
 ## 使用前准备
 
@@ -32,6 +204,7 @@
   - 安装gcc-arm-none-eabi,如果是解压型的,解压后把bin目录加入到环境变量中.
 - [pyOCD安装方法](https://github.com/pyocd/pyOCD),这是下载和调试mcu的工具,只编译的话,不需要.
   - 还可以安装libusb,来显示更多调试信息,比如断言.
+- pyocd烧写方法:`pyocd flash -t hc32f460xe firmware.elf`
 
 ## Cmake 配置例子
 
@@ -39,13 +212,13 @@
 - 添加了`PROJECT_VERSION_MAJOR`,`PROJECT_VERSION_MINOR`,`PROJECT_VERSION_PATCH` 宏定义, 下面是使用一个`uint32_t`来表示版本的示例
 - cmake例子中, 添加了option(USE_USB ON), 来默认开启USB支持, 打开和不打开USB支持, 对固件大小没有影响, 代码中真正使用了USB, 一定要打开支持, 并定义usb_app_conf.h, 没有这个头文件不会报错, 但是USB会无法使用, 因为缺少很多宏定义开关
 
- ```c
- uint32_t version_get(void){
-    return ((uint32_t)(PROJECT_VERSION_MAJOR & 0x3FFU) << 22U) |
-           ((uint32_t)(PROJECT_VERSION_MINOR & 0x7FFU) << 11U) |
-           ((uint32_t)(PROJECT_VERSION_PATCH & 0x7FFU));
- }
- ```
+```c
+uint32_t version_get(void){
+   return ((uint32_t)(PROJECT_VERSION_MAJOR & 0x3FFU) << 22U) |
+          ((uint32_t)(PROJECT_VERSION_MINOR & 0x7FFU) << 11U) |
+          ((uint32_t)(PROJECT_VERSION_PATCH & 0x7FFU));
+}
+```
 
 - 在自己的项目中添加并使用本驱动
 
@@ -63,10 +236,10 @@ cd build
 cmake -DCMAKE_BUILD_TYPE=Release .. -G Ninja
 cmake --build .
 # 编译(windows)
-cmake -DCMAKE_BUILD_TYPE=Release .. -G Ninja 
+cmake -DCMAKE_BUILD_TYPE=Release .. -G Ninja
 cmake --build .
 # 烧写
-pyocd flash -t hc32f4a0xi myproject.elf
+pyocd flash -t hc32f460xe myproject.elf
 ```
 
 - vsocde打开项目时显示全红,但是可以编译的解决方法,因cmake中添加了`set(CMAKE_EXPORT_COMPILE_COMMANDS ON)`,会自动在编译目录下生成`compile_commands.json`文件,在项目下的`.vscode`目录下创建一个`c_cpp_properties.json`文件,并添加以下内容,保存后,会自动在结尾添加`version: 4`,版本字样,可能不是4,`name`可以自己设置,`compile_commands.json`的生成目录也可以自己设置和cmake的生成目录一致.
@@ -86,13 +259,13 @@ pyocd flash -t hc32f4a0xi myproject.elf
        }
    ]
 }
- ```
+```
 
 - VsCode中调试工具:`Cortex-Debug`, 配置如下,`overrideGDBServerStartedRegex`这个是启动成功提示,如果有问题再加上
 
 ```json
- {
-   // 使用 IntelliSense 了解相关属性。 
+{
+   // 使用 IntelliSense 了解相关属性。
    // 悬停以查看现有属性的描述。
    // 欲了解更多信息，请访问: https://go.microsoft.com/fwlink/?linkid=830387
    "version": "0.2.0",
@@ -101,7 +274,7 @@ pyocd flash -t hc32f4a0xi myproject.elf
        {
            "name": "Cortex Debug",
            "cwd": "${workspaceFolder}",
-           "executable": "./build/hc32f4a0-bootloader.elf",
+           "executable": "./build/myproject.elf",
            "request": "launch",
            "type": "cortex-debug",
            "runToEntryPoint": "main",
